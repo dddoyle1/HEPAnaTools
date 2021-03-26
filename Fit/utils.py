@@ -9,18 +9,41 @@ def fake_templates(nbins,
                    nsignal=100,
                    nbkgd0=400,
                    nbkgd1=200,
-                   seed=None):
+                   seed=None,
+                   shape=None):
     np.random.seed(seed)
+
     
+    try:
+        iter(shape)
+        nsignal = (*shape, nsignal)
+        nbkgd0  = (*shape, nbkgd0 )
+        nbkgd1  = (*shape, nbkgd1 )
+
+    except TypeError:
+        pass
+
+
     s = -1 * np.random.exponential(0.1, nsignal) + 1
-    signal, bins = np.histogram(s, nbins, range=(0,1))
-
-
     b0 = np.random.exponential(0.1, nbkgd0)
-    bkgd0, _ = np.histogram(b0, nbins, range=(0,1))
-
     b1 = np.random.normal(0.5, .25, nbkgd1)
-    bkgd1, _ = np.histogram(b1, nbins, range=(0,1))
+    
+    multi_dim = len(s.shape) > 1
+    # flatten all but last axis so we can make separate histograms    
+    if multi_dim:
+        signal = np.array([np.histogram(hs , nbins, range=(0, 1)) for hs  in s .reshape(np.prod(s .shape[:-1]), s .shape[-1])])
+        bkgd0  = np.array([np.histogram(hb0, nbins, range=(0, 1)) for hb0 in b0.reshape(np.prod(b0.shape[:-1]), b0.shape[-1])])
+        bkgd1  = np.array([np.histogram(hb1, nbins, range=(0, 1)) for hb1 in b1.reshape(np.prod(b1.shape[:-1]), b1.shape[-1])])
+
+        bins   = np.asarray(signal[:,1].reshape(s .shape[:-1]).tolist())
+        signal = np.asarray(signal[:,0].reshape(s .shape[:-1]).tolist())
+        bkgd0  = np.asarray(bkgd0 [:,0].reshape(b0.shape[:-1]).tolist())
+        bkgd1  = np.asarray(bkgd1 [:,0].reshape(b1.shape[:-1]).tolist())
+    
+    else:
+        signal, bins = np.histogram(s, nbins, range=(0,1))
+        bkgd0, _ = np.histogram(b0, nbins, range=(0,1))
+        bkgd1, _ = np.histogram(b1, nbins, range=(0,1))
 
     return signal, bkgd0, bkgd1, bins
 
@@ -32,14 +55,35 @@ def plot_templates(templates,
                    bins,
                    xlabel='Template Bins',
                    name=None,
+                   data=None,
+                   yerr=None,
+                   scales=None,
+                   chisq=None,
                    **kwargs):
     import matplotlib.pyplot as plt
-    for temp, label in zip(templates, labels):
-        plt.hist(bins[:-1], weights=temp, bins=bins,
+
+    if scales and len(scales) != len(templates):
+        print(f'Scales ({scales.shape}) not compatible with templates ({templates.shape})')
+        exit
+    if scales is None: scales = np.ones(len(templates))
+    
+    for temp, scale, label in zip(templates, scales, labels):
+        plt.hist(bins[:-1], weights=np.dot(temp, scale), bins=bins,
                  label=label,
                  histtype='stepfilled',
                  alpha=0.7,
                  **kwargs)
+
+    if data is not None:
+        width = (bins[1:] - bins[:-1]) / 2
+        x = bins[:-1] + width
+        plt.errorbar(x, data, xerr=width, yerr=yerr,                     
+                     marker='.',
+                     ls='none',
+                     mfc='black',
+                     color='black',
+                     label='Data')
+
 
     plt.xlabel(xlabel)
     plt.ylabel('Events')

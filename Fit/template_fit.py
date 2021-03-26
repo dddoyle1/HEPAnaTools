@@ -1,7 +1,8 @@
 import numpy as np
 import scipy.optimize
+    
 
-class TemplateFit:
+class LocalTemplateFit:
     def __init__(self, cov, templates):
         self.V = cov
         self.T = np.array(templates)        
@@ -9,14 +10,16 @@ class TemplateFit:
         self._fixed_params = np.empty(self.T.shape[0])
         self._fixed_params[:] = np.nan
 
-        self._results = {}
+        
         
     def __call__(self, params):
-        p = self._to_user_coords(params)
-
-        u = np.dot(p, self.T)
-        b = np.linalg.solve(self.V, self.X - u)
+        u = self.U(params)
+        #b = np.linalg.solve(self.V, self.X - u)
+        b = scipy.linalg.solve(self.V, self.X - u, assume_a='sym')
         return np.dot(self.X - u, b)
+
+    def U(self, params):
+        return np.dot(self._to_user_coords(params), self.T)
 
     def fix_template(self, template_idx, val):
         if np.isnan(self._param_mask.sum(axis=1)[template_idx]):
@@ -90,17 +93,19 @@ class TemplateFit:
 
             errors.append((up, dw))
 
+        self.release_templates()        
         minos_results['dx'] = errors
+
         best_results.update(minos_results)
         return best_results
     
 
     def _jacobian(self, params):
-        p = self._to_user_coords(params)
-        
-        u = np.dot(p, self.T)
-        d1 = np.linalg.solve(self.V, self.X - u)
-        d2 = np.linalg.solve(self.V, self.T.transpose())
+        u = self.U(params)
+        #d1 = np.linalg.solve(self.V, self.X - u)
+        #d2 = np.linalg.solve(self.V, self.T.transpose())
+        d1 = scipy.linalg.solve(self.V, self.X - u, assume_a='sym')
+        d2 = scipy.linalg.solve(self.V, self.T.transpose(), assume_a='sym')
         return self._to_optimizer_coords(-1 * np.dot(self.T, d1) - np.dot(self.X - u, d2))
 
     def _to_user_coords(self, optimizer_params):
@@ -108,3 +113,34 @@ class TemplateFit:
                              
     def _to_optimizer_coords(self, user_params):
         return user_params[~np.isnan(self._param_mask.sum(axis=1))]
+
+    
+class GlobalTemplateFit(LocalTemplateFit):
+    def __init__(self, cov, templates):
+        """ 
+        arguments:
+           cov       : (NxN)   np.array
+           templates : (txpxqxn) np.array 
+                       where p x q x n = N
+                       t is number of components
+                       t x p x q = number of fit parameters
+        """
+        self.V = cov
+        self.T = np.array(templates)
+
+        if np.prod(self.T.shape[1:]) != self.V.shape[0]:
+            raise TypeError(f'Template shape ({self.T.shape}) not compatible with covariance matrix ({self.V.shape})')
+        
+        self._param_mask = np.identity(np.prod(self.T.shape[:-1]))
+        self._fixed_params = np.empty(np.prod(self.T.shape[:-1]))
+        self._fixed_params[:] = np.nan
+
+    def U(self, params):
+        # flatten phase space
+        flat_T = self.T.reshape((np.prod(self.T.shape[:-1]), self.T.shape[-1]))
+        return np.dot(np.diag(self._to_user_coords(params)), flat_T).reshape((self.T.shape[0], np.prod(self.T.shape[1:]))).sum(axis=0)
+    #return GlobalTemplateFit._mult(self.T, self._to_user_coords(params).reshape(self.T.shape[:-1])).reshape((self.T.shape[0], np.prod(self.T.shape[1:]))).sum(axis=0)
+
+
+    def _mult(t, a):
+        return np.dot(np.diag(a.flatten()), t.reshape((np.prod(a.shape), t.shape[-1]))).reshape(t.shape)
