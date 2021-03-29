@@ -5,18 +5,27 @@ import scipy.optimize
 class LocalTemplateFit:
     def __init__(self, cov, templates):
         self.V = cov
-        self.T = np.array(templates)        
+
+        # invert using svd decomposition
+        u,s,v = np.linalg.svd(self.V)
+        self.Vinv = np.dot(v.transpose(), np.dot(np.diag(s**-1),u.transpose()))
+
+        # condition number -- a measure of the accuracy of the inversion
+        self.kV = np.linalg.cond(self.V)
+        
+        self.T = np.array(templates)
+
+        # bookkeeping for fixing templates in the fit
         self._param_mask = np.identity(self.T.shape[0])
         self._fixed_params = np.empty(self.T.shape[0])
         self._fixed_params[:] = np.nan
+
 
         
         
     def __call__(self, params):
         u = self.U(params)
-        #b = np.linalg.solve(self.V, self.X - u)
-        b = scipy.linalg.solve(self.V, self.X - u, assume_a='sym')
-        return np.dot(self.X - u, b)
+        return np.dot((self.X - u), np.dot(self.V, (self.X - u).T))
 
     def U(self, params):
         return np.dot(self._to_user_coords(params), self.T)
@@ -51,6 +60,7 @@ class LocalTemplateFit:
         bounds = [(0, 10) for _ in range(self._param_mask.shape[1])]
         results = scipy.optimize.dual_annealing(self, bounds, *args, local_search_options={'method': 'Newton-CG', 'jac': self._jacobian}, **kwargs)
         results.x = self._to_user_coords(results.x)
+        results.update({'k(V)': self.kV})
         return results
 
     def MINOS(self, data, *args, **kwargs):
@@ -102,11 +112,7 @@ class LocalTemplateFit:
 
     def _jacobian(self, params):
         u = self.U(params)
-        #d1 = np.linalg.solve(self.V, self.X - u)
-        #d2 = np.linalg.solve(self.V, self.T.transpose())
-        d1 = scipy.linalg.solve(self.V, self.X - u, assume_a='sym')
-        d2 = scipy.linalg.solve(self.V, self.T.transpose(), assume_a='sym')
-        return self._to_optimizer_coords(-1 * np.dot(self.T, d1) - np.dot(self.X - u, d2))
+        return -2 * np.dot(self.T, np.dot(self.Vinv, (self.X - u).T))
 
     def _to_user_coords(self, optimizer_params):
         return np.nan_to_num(np.dot(self._param_mask, optimizer_params)) + np.nan_to_num(self._fixed_params)
@@ -126,6 +132,14 @@ class GlobalTemplateFit(LocalTemplateFit):
                        t x p x q = number of fit parameters
         """
         self.V = cov
+        
+        # invert using svd decomposition
+        u,s,v = np.linalg.svd(self.V)
+        self.Vinv = np.dot(v.transpose(), np.dot(np.diag(s**-1),u.transpose()))
+        
+        # condition number -- a measure of the accuracy of the inversion
+        self.kV = np.linalg.cond(self.V)
+        
         self.T = np.array(templates)
 
         if np.prod(self.T.shape[1:]) != self.V.shape[0]:
@@ -135,12 +149,19 @@ class GlobalTemplateFit(LocalTemplateFit):
         self._fixed_params = np.empty(np.prod(self.T.shape[:-1]))
         self._fixed_params[:] = np.nan
 
+        # save PxP identity where P=txpxq fit parameters
+        # used for jacobian 
+        self.I = np.identity(np.prod(self.T.shape[:-1]))
+
     def U(self, params):
         # flatten phase space
         flat_T = self.T.reshape((np.prod(self.T.shape[:-1]), self.T.shape[-1]))
         return np.dot(np.diag(self._to_user_coords(params)), flat_T).reshape((self.T.shape[0], np.prod(self.T.shape[1:]))).sum(axis=0)
-    #return GlobalTemplateFit._mult(self.T, self._to_user_coords(params).reshape(self.T.shape[:-1])).reshape((self.T.shape[0], np.prod(self.T.shape[1:]))).sum(axis=0)
 
+    def _jacobian(self, params):
+        N_t = np.array([self.U(i) for i in self.I])
+        u = self.U(params)
+        return -2 * np.dot(N_t, np.dot(self.Vinv, (self.X - u).T))
 
     def _mult(t, a):
         return np.dot(np.diag(a.flatten()), t.reshape((np.prod(a.shape), t.shape[-1]))).reshape(t.shape)
