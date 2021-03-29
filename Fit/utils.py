@@ -118,9 +118,6 @@ def mv_covariance(mv):
 
     return cov
 
-# precompile mv_covariance with a small matrix
-mv_covariance(fake_mv(2, 10))
-
 def plot_mat(cov, name=None, **kwargs):
     import matplotlib.pyplot as plt
 
