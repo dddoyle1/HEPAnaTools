@@ -58,8 +58,7 @@ def plot_templates(templates,
                    data=None,
                    yerr=None,
                    scales=None,
-                   chisq=None,
-                   **kwargs):
+                   chisq=None):
     import matplotlib.pyplot as plt
 
     if scales and len(scales) != len(templates):
@@ -71,13 +70,12 @@ def plot_templates(templates,
         plt.hist(bins[:-1], weights=np.dot(temp, scale), bins=bins,
                  label=label,
                  histtype='stepfilled',
-                 alpha=0.7,
-                 **kwargs)
+                 alpha=0.7)
 
     if data is not None:
         width = (bins[1:] - bins[:-1]) / 2
         x = bins[:-1] + width
-        plt.errorbar(x, data, xerr=width, yerr=yerr,                     
+        plt.errorbar(x, data, #xerr=width, #yerr=yerr,                     
                      marker='.',
                      ls='none',
                      mfc='black',
