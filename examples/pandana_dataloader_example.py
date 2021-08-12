@@ -1,4 +1,4 @@
-from PandAnaTools.BDT import TrainTestDataLoader
+from PandAnaTools.ML import TrainTestDataLoader
 from pandana import *
 import argparse
 
