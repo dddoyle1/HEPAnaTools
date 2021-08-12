@@ -1,8 +1,8 @@
 import numpy as np
 import pandas as pd
 import os
-from PandAnaTools.ML.dataloader import TrainTestDataLoader
-from PandAnaTools.ML.skclassifier import *
+from pyHEPTools.ML.dataloader import TrainTestDataLoader
+from pyHEPTools.ML.skclassifier import *
 from scipy.stats import ks_2samp
 
 class SKReweighter(SKClassifier):

@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 import os
-from PandAnaTools.ML.dataloader import TrainTestDataLoader
+from pyHEPTools.ML.dataloader import TrainTestDataLoader
 from scipy.stats import ks_2samp
 
 class SKClassifier:

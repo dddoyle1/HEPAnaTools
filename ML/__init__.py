@@ -1,3 +1,3 @@
-from PandAnaTools.ML.skrwgt import *
-from PandAnaTools.ML.dataloader import *
-from PandAnaTools.ML.skclassifier import *
+from pyHEPTools.ML.skrwgt import *
+from pyHEPTools.ML.dataloader import *
+from pyHEPTools.ML.skclassifier import *

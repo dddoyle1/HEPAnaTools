@@ -1,2 +1,2 @@
-# PandAnaTools
-HEP analysis tools built for PandAna-style analysis
+# pyHEPTools
+HEP analysis tools built for python analyses
