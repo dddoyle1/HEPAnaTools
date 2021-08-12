@@ -1,2 +1,2 @@
-# pyHEPTools
-HEP analysis tools built for python analyses
+# HEPAnaTools
+HEP analysis tools built for python and CAFAna analyses

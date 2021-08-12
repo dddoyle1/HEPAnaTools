@@ -1,4 +1,4 @@
-from pyHEPTools.ML import TrainTestDataLoader
+from HEPAnaTools.ML import TrainTestDataLoader
 from pandana import *
 import argparse
 
