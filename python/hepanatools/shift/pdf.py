@@ -1,4 +1,4 @@
-from HEPAnaTools.EventCDFShift import Hist, Hist2D
+from hepanatools.shift import Hist, Hist2D
 import numba
 
 class PDF2D(Hist2D):
@@ -15,7 +15,7 @@ class PDF2D(Hist2D):
             cdf[i,:] = c
         return CDF2D.Filled(cdf, self.xaxis, self.yaxis)
         
-class CDF2D(Hist2D)
+class CDF2D(Hist2D):
     def __init__(self, *args, **kwargs):
         pdf = PDF2D(*args, **kwargs)
         self = pdf.CDF()
