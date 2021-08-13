@@ -1,4 +1,4 @@
-from HEPAnaTools.ML import TrainTestDataLoader, BDTClassifier
+from hepanatools.ml import TrainTestDataLoader, BDTClassifier
 import argparse
 
 parser = argparse.ArgumentParser('BDT Training example')

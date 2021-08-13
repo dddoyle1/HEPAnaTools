@@ -1,4 +1,4 @@
-from HEPAnaTools.EventCDFShift import EventMatchedTable
+from hepanatools.shift import EventMatchedTable
 import argparse
 
 parser = argparse.ArgumentParser()
