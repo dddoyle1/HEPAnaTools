@@ -7,6 +7,6 @@ setup(name='hepanatools',
       author='Derek Doyle',
       author_email='derek.doyle@colostate.edu',
       license='MIT',
-      packages=['python/hepanatools'],
+      packages=['hepanatools'],
       zip_safe=False)
 
