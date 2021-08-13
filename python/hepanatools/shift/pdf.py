@@ -1,4 +1,4 @@
-from hepanatools.shift import Hist, Hist2D
+from hepanatools.shift.hist import Hist, Hist2D
 import numba
 
 class PDF2D(Hist2D):
@@ -23,7 +23,7 @@ class CDF2D(Hist2D):
     @numba.jit(nopython=True)
     def Sample(self, x):
         ix = self.xaxis.find_bin(x)
-        y = np.random.uniform(self.n[ix,0], self.[ix,-1])
+        y = np.random.uniform(self.n[ix,0], self.n[ix,-1])
 
         ub = np.where(self.n[ix,:] >= y)[0][0]
         b1 = ub
