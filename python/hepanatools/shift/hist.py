@@ -38,9 +38,14 @@ class Axis:
 
 
 class Hist1D:
-    def __init__(self, X, edges, **kwargs):
-        self.n, edges = np.histogram(X, bins, **kwargs)
-        self.xaxis = Axis(edges)
+    def __init__(self, X, bins, **kwargs):
+        if X is not None:
+            self.n, edges = np.histogram(X, bins, **kwargs)
+            self.xaxis = Axis(edges)
+        else:
+            self.n = None
+            self.xaxis = None
+
 
     @staticmethod
     def FromH5(file_name_or_handle, path):
@@ -51,7 +56,7 @@ class Hist1D:
 
     @staticmethod
     def Filled(n, edges):
-        h = Hist1D([], [])
+        h = Hist1D(None, None)
         h.n = n
         h.xaxis = edges if type(edges) is Axis else Axis(edges)
         return h
@@ -74,15 +79,30 @@ class Hist1D:
         h.Write(name)
 
 
-    def Draw(self, ax, **kwargs):
-        ax.hist(self.xaxis.edges[:-1], edges=self.xaxis.edges, weights=self.n, **kwargs)
-        ax.set_xlim([self.xaxis.edges[0], self.xaxis.edges[-1]])        
+    def Draw(self, ax=None, histtype='step', **kwargs):
+        import matplotlib.pyplot as plt
+        if ax is None: ax = plt.gca()
+
+        if histtype == 'error':
+            bin_widths = np.diff(self.xaxis.edges)
+            bin_centers = (self.xaxis.edges[:-1] + self.xaxis.edges[1:]) / 2
+            yerr = np.sqrt(self.n)
+            ax.errorbar(bin_centers, self.n, xerr=bin_widths/2, yerr=yerr, fmt='.', **kwargs)
+        else:
+            ax.hist(self.xaxis.edges[:-1], bins=self.xaxis.edges, weights=self.n, histtype=histtype, **kwargs)
+            ax.set_xlim([self.xaxis.edges[0], self.xaxis.edges[-1]])
+        return ax
 
 class Hist2D:
-    def __init__(self, X, Y, edges, **kwargs):
-        self.n, xedges, yedges = np.histogram2d(X, Y, bins=edges, **kwargs)
-        self.xaxis = Axis(xedges)
-        self.yaxis = Axis(yedges)
+    def __init__(self, X, Y, bins, **kwargs):
+        if X is not None:
+            self.n, xedges, yedges = np.histogram2d(X, Y, bins, **kwargs)
+            self.xaxis = Axis(xedges)
+            self.yaxis = Axis(yedges)
+        else:
+            self.n = None
+            self.xaxis = None
+            self.yaxis = None
 
     @staticmethod
     def FromH5(file_name_or_handle, path):
@@ -93,7 +113,7 @@ class Hist2D:
 
     @staticmethod
     def Filled(n, xedges, yedges):
-        h = Hist2D([], [], [])
+        h = Hist2D(None, None, None)
         h.n = n
         h.xaxis = xedges if type(xedges) is Axis else Axis(xedges)
         h.yaxis = yedges if type(yedges) is Axis else Axis(yedges)
@@ -130,22 +150,32 @@ class Hist2D:
                                          np.prod(*self.n.shape),
                                          np.prod(*self.n.shape)+1))        
     
-    def Draw(self, ax, colorbar=True,**kwargs):
-        _X, _Y = np.meshgrid(self.xaxis.edges, self.yaxis)
-        im = ax.pcolormash(_X, _Y, self.n.T, **kwargs)
+    def Draw(self, ax=None, colorbar=True,**kwargs):
+        import matplotlib.pyplot as plt
+        if ax is None: ax = plt.gca()
+
+        _X, _Y = np.meshgrid(self.xaxis.edges, self.yaxis.edges)
+        im = ax.pcolormesh(_X, _Y, self.n.T, **kwargs)
         ax.set_xlim([self.xaxis.edges[0], self.xaxis.edges[-1]])
         ax.set_ylim([self.yaxis.edges[0], self.yaxis.edges[-1]])        
         if colorbar: plt.colorbar(im)
+        return ax
 
                                   
 class Hist3D:
-    def __init__(self, X, Y, Z, edges, **kwargs):
-        self.n, edges = np.histogramdd((X, Y, Z),
-                                       bins=edges,
-                                       **kwargs)
-        self.xaxis = Axis(edges[0])
-        self.yaxis = Axis(edges[1])
-        self.zaxis = Axis(edges[2])
+    def __init__(self, X, Y, Z, bins, **kwargs):
+        if X is not None:
+            self.n, edges = np.histogramdd((X, Y, Z),
+                                           bins,
+                                           **kwargs)
+            self.xaxis = Axis(edges[0])
+            self.yaxis = Axis(edges[1])
+            self.zaxis = Axis(edges[2])
+        else:
+            self.n = None
+            self.xaxis = None
+            self.yaxis = None
+            self.xaxis = None
 
     @staticmethod
     def FromH5(file_name_or_handle, path):
@@ -159,7 +189,7 @@ class Hist3D:
 
     @staticmethod
     def Filled(n, xedges, yedges, zedges):
-        h = Hist3D([], [], [])
+        h = Hist3D(None, None, None, None)
         h.n = n
         h.xaxis = xedges if type(xedges) is Axis else Axis(xedges)
         h.yaxis = yedges if type(yedges) is Axis else Axis(yedges)
