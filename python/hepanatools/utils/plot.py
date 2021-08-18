@@ -10,3 +10,4 @@ def split_subplots(*args, **kwargs):
 def savefig(name, **kwargs):
     print(f'Writing {name}')
     plt.savefig(name, **kwargs)
+    plt.close()
