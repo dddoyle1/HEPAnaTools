@@ -137,20 +137,14 @@ class BinOptimizer:
     def __init__(self,
                  nbins,
                  range,
-                 obj_bins,
                  axis=0,
-                 cdf_factory=CDF2D,
                  analytic_jacobian=True):
         self.axis = axis
         self.nbins = nbins
         self.bins = [[], []]
         self.bins[axis] = np.linspace(*range, self.nbins+1)
 
-        self.obj_bins = obj_bins
-        
         self.results = None
-
-        self.cdf_factory = cdf_factory
 
         jac = partial(self._jac, lb=range[0], ub=range[0]) if analytic_jacobian else '2-point'
         
@@ -159,54 +153,39 @@ class BinOptimizer:
                                                                      ub=range[1]),
                                                              np.zeros(self.nbins - 1),
                                                              np.ones(self.nbins - 1),
-                                                             jac=jac,
-                                                             hess=scipy.optimize.SR1())
+                                                             jac=jac)
 
         self.best_chisq = 1e10
         self.best_bins = None
 
-    def __call__(self, nominal, shifted, xbins, ybins ,*, x0=None, **kwargs):
+    def __call__(self, fun, xbins, ybins,*, x0=None, **kwargs):
         if x0 is not None: self.bins[self.axis] = x0
         if self.axis == 0: self.bins[1] = ybins
         if self.axis == 1: self.bins[0] = xbins
 
-        self.results = scipy.optimize.minimize(partial(self._fit,
-                                                       nominal=nominal,
-                                                       target=shifted),
-                                               self.bins[self.axis][1:-1],
+        self.results = scipy.optimize.minimize(self._funwrap,
+                                               self.bins[self.axis][1:-1],                                               
+                                               args=(fun),
                                                method='trust-constr',
                                                constraints=[self.constraint],
                                                **kwargs)
-            
+        
         self._update(self.results.x)
-        return nominal, shifted, self.bins[0], self.bins[1] 
-
-
-    def _fit(self, floating_bins, nominal, target):
-        self._update(floating_bins)
-
-        try:
-            cdf = self.cdf_factory(nominal, target, xbins=self.bins[0], ybins=self.bins[1])
-        except ValueError as err:
-            print('Error: somehow fell into a non-monotonic parameter space')
-            print(self.bins[self.axis])
-            exit(1)
-            
+        return self.results
         
-        hshifted = Hist1D(np.array([cdf.Shift(x) for x in nominal]), bins=self.obj_bins)
-        htarget  = Hist1D(target, bins=self.obj_bins)
-        
-        chi = chisq(htarget.n, hshifted.n)
+    def _update(self, floating_bins):
+        self.bins[self.axis][1:-1] = floating_bins
 
+    def _funwrap(self, x, fun, *args, **kwargs):
+        self._update(x)
+        chi = fun(*args, **kwargs)
+        
         # save the best fit in case the minimizer gets taken out of
         # minima and can't find it's way back in
         if chi < self.best_chisq:
             self.best_chisq = chi
             self.best_bins = self.bins[self.axis]
         return chi
-    
-    def _update(self, floating_bins):
-        self.bins[self.axis][1:-1] = floating_bins
 
     @staticmethod
     @numba.jit(nopython=True)    
@@ -236,16 +215,55 @@ class BinOptimizer:
             jac[i+1, i] = jac[i, i+1]
 
         return jac
-    
+
+class TestBinOptimizer(BinOptimizer):
+    def __init__(self, target_bins, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.target_bins = target_bins
+
+    def fun(self, X, target_hist):
+        u, _ = np.histogram(X, bins=self.bins[self.axis])
+        return chisq(target_hist, u)
+
+    def __call__(self, X, **kwargs):
+        target_hist, _ = np.histogram(X, bins=self.target_bins)
+        super().__call__(partial(self.fun, X=X, target_hist=target_hist),
+                         xbins=None, ybins=None,
+                         **kwargs)
+        return self.results
+        
+        
 class CDFBinOptimizer(BinOptimizer):
-    def __init__(self):
     def __init__(self,
                  obj_bins,
-                 cdf_factory=CDF2D):
-        super().__init__(*args, axis=0, **kwargs) 
+                 cdf_factory=CDF2D,
+                 **kwargs):
+        super().__init__(axis=0, **kwargs) 
         self.obj_bins = obj_bins
         
         self.cdf_factory = cdf_factory
+
+    def __call__(self, nominal, shifted, xbins, ybins, **kwargs):
+        super().__call__(partial(self.fun,
+                                 nominal=nominal,
+                                 target=shifted),
+                         xbins, ybins,
+                         **kwargs)
+        return nominal, shifted, self.bins[0], self.bins[1]         
+    
+    def fun(self, floating_bins, nominal, target):
+        try:
+            cdf = self.cdf_factory(nominal, target, xbins=self.bins[0], ybins=self.bins[1])
+        except ValueError as err:
+            print('Error: somehow fell into a non-monotonic parameter space')
+            print(self.bins[self.axis])
+            exit(1)
+            
+        
+        hshifted = Hist1D(np.array([cdf.Shift(x) for x in nominal]), bins=self.obj_bins)
+        htarget  = Hist1D(target, bins=self.obj_bins)
+        
+        return chisq(htarget.n, hshifted.n)
 
 
 class Callback:
@@ -294,13 +312,18 @@ class ProgressTrackerCallback(Callback):
         for i in range(len(self.fun_calls)):
             x = np.concatenate(([lb], self.params[i], [ub]))
             y = self.fun_calls[i] * ones
+            if max_fun - min_fun > 0:
+                color_val = (self.fun_vals[i] - min_fun) / (max_fun - min_fun)
+            else:
+                color_val = 0.5
             ax.plot(x, y,
-                    color = cmap((self.fun_vals[i] - min_fun) / (max_fun - min_fun)),
+                    color=cmap(color_val),
                     marker='|',
                     ms=20, markeredgewidth=4)
         sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(vmin=min_fun, vmax=max_fun))        
         plt.colorbar(sm, ax=ax)
 
-        ax.set_yticks(self.fun_calls)
+        ax.set_yticks(self.fun_calls[::10])
         ax.set_xlim([lb, ub])
+        ax.set_ylabel('Iterations')
         return ax        
