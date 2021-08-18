@@ -20,7 +20,7 @@ class FileNameOrHandle:
     def __enter__(self):
         return self.handle
 
-    def __exit__(self):
+    def __exit__(self, exception_type, exception_value, traceback):
         if not self.delegate: self.handle.close()
 
         
