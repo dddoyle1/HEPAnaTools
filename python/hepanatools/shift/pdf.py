@@ -134,17 +134,22 @@ def xbins_equal_prob(nominal, shifted, xbins, ybins):
     return nominal, shifted, xedges, ybins
 
 class BinOptimizer:
+    DEFAULT_MINIMIZER_OPTS = {'initial_constr_penalty': 1000,
+                              'finite_diff_rel_step': 0.001}    
     def __init__(self,
                  nbins,
                  range,
                  axis=0,
-                 analytic_jacobian=True):
+                 analytic_jacobian=True,
+                 minimizer_opts=None):
         self.axis = axis
         self.nbins = nbins
         self.bins = [[], []]
         self.bins[axis] = np.linspace(*range, self.nbins+1)
-
+        
         self.results = None
+        self.minimizer_opts = BinOptimizer.DEFAULT_MINIMIZER_OPTS
+        self.minimizer_opts.update(minimizer_opts)
 
         jac = partial(self._jac, lb=range[0], ub=range[0]) if analytic_jacobian else '2-point'
         
@@ -164,10 +169,11 @@ class BinOptimizer:
         if self.axis == 1: self.bins[0] = xbins
 
         self.results = scipy.optimize.minimize(self._funwrap,
-                                               self.bins[self.axis][1:-1],                                               
+                                               self.bins[self.axis][1:-1],
                                                args=(fun),
                                                method='trust-constr',
                                                constraints=[self.constraint],
+                                               options=self.minimizer_opts,
                                                **kwargs)
         
         self._update(self.results.x)
@@ -217,16 +223,14 @@ class BinOptimizer:
         return jac
 
 class TestBinOptimizer(BinOptimizer):
-    def __init__(self, target_bins, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.target_bins = target_bins
 
     def fun(self, X, target_hist):
         u, _ = np.histogram(X, bins=self.bins[self.axis])
         return chisq(target_hist, u)
 
-    def __call__(self, X, **kwargs):
-        target_hist, _ = np.histogram(X, bins=self.target_bins)
+    def __call__(self, X, target_hist, **kwargs):
         super().__call__(partial(self.fun, X=X, target_hist=target_hist),
                          xbins=None, ybins=None,
                          **kwargs)
@@ -243,6 +247,16 @@ class CDFBinOptimizer(BinOptimizer):
         
         self.cdf_factory = cdf_factory
 
+    @staticmethod
+    def FromConfig(config):
+        return CDFBinOptimizer(config.objective_bins,
+                               cdf_factory=partial(CDF2D, constraint=config.bounds),
+                               nbins=config.xbins,
+                               range=config.xlim,
+                               minimizer_opts=config.minimizer_opts)
+
+
+        
     def __call__(self, nominal, shifted, xbins, ybins, **kwargs):
         super().__call__(partial(self.fun,
                                  nominal=nominal,
@@ -251,13 +265,13 @@ class CDFBinOptimizer(BinOptimizer):
                          **kwargs)
         return nominal, shifted, self.bins[0], self.bins[1]         
     
-    def fun(self, floating_bins, nominal, target):
+    def fun(self, nominal, target):
         try:
             cdf = self.cdf_factory(nominal, target, xbins=self.bins[0], ybins=self.bins[1])
         except ValueError as err:
             print('Error: somehow fell into a non-monotonic parameter space')
             print(self.bins[self.axis])
-            exit(1)
+            raise err
             
         
         hshifted = Hist1D(np.array([cdf.Shift(x) for x in nominal]), bins=self.obj_bins)
@@ -319,11 +333,13 @@ class ProgressTrackerCallback(Callback):
             ax.plot(x, y,
                     color=cmap(color_val),
                     marker='|',
-                    ms=20, markeredgewidth=4)
+                    ms=8, markeredgewidth=4)
         sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(vmin=min_fun, vmax=max_fun))        
-        plt.colorbar(sm, ax=ax)
-
+        cb = plt.colorbar(sm, ax=ax)
+        cb.set_label(r'$\chi^2$')
+        
         ax.set_yticks(self.fun_calls[::10])
         ax.set_xlim([lb, ub])
         ax.set_ylabel('Iterations')
+
         return ax        
