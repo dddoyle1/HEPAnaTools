@@ -50,8 +50,8 @@ class Hist1D:
     @staticmethod
     def FromH5(file_name_or_handle, path):
         with FileNameOrHandle(file_name_or_handle, 'r') as f:
-            dset = f.get(path)[:]
-            h = Hist.FilledHist(dset[:], dset.attrs['xedges'])
+            dset = f.get(path)
+            h = Hist.Filled(dset[:], dset.attrs['xaxis'])
         return h
 
     @staticmethod
@@ -107,8 +107,8 @@ class Hist2D:
     @staticmethod
     def FromH5(file_name_or_handle, path):
         with FileNameOrHandle(file_name_or_handle, 'r') as f:
-            dset = f.get(path)[:]
-            h = Hist2D.FilledHist(dset[:], dset.attrs['xedges'], dset.attrs['yedges'])
+            dset = f.get(path)
+            h = Hist2D.Filled(dset[:], dset.attrs['xaxis'], dset.attrs['yaxis'])
         return h
 
     @staticmethod
@@ -147,8 +147,8 @@ class Hist2D:
     def ToHist1D(self):
         return Hist1D.Filled(self.n.flatten(),
                              np.linspace(0,
-                                         np.prod(*self.n.shape),
-                                         np.prod(*self.n.shape)+1))        
+                                         np.prod(self.n.shape),
+                                         np.prod(self.n.shape)+1))        
     
     def Draw(self, ax=None, colorbar=True,**kwargs):
         import matplotlib.pyplot as plt
@@ -180,11 +180,11 @@ class Hist3D:
     @staticmethod
     def FromH5(file_name_or_handle, path):
         with FileNameOrHandle(file_name_or_handle, 'r') as f:
-            dset = f.get(path)[:]
-            h = Hist3D.FilledHist(dset[:],
-                                  dset.attrs['xedges'],
-                                  dset.attrs['yedges'],
-                                  dset.attrs['zedges'])
+            dset = f.get(path)
+            h = Hist3D.Filled(dset[:],
+                              dset.attrs['xaxis'],
+                              dset.attrs['yaxis'],
+                              dset.attrs['zaxis'])
         return h
 
     @staticmethod
@@ -226,8 +226,8 @@ class Hist3D:
     def ToHist1D(self):
         return Hist1D.Filled(self.n.flatten(),
                              np.linspace(0,
-                                         np.prod(*self.n.shape),
-                                         np.prod(*self.n.shape)+1))
+                                         np.prod(self.n.shape),
+                                         np.prod(self.n.shape)+1))
     
     def Draw(self, ax, colorbar=True,**kwargs):
         raise NotImplementedError
