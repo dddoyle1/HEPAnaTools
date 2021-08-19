@@ -1,9 +1,10 @@
 from hepanatools.shift.hist import Hist1D, Hist2D
-from hepanatools.utils.math import chisq
+from hepanatools.utils.math import chisq, not_quite_chisq
 import scipy.optimize    
 import numba
 import numpy as np
 from functools import partial
+import json
 
 class Bounds:
     def __init__(self, lb, ub):
@@ -39,13 +40,26 @@ class PDF2D(Hist2D):
                          **kwargs)
 
 class CDF2D(Hist2D):
-    def __init__(self, *args, pdf=None, constraint=PassThrough(), **kwargs):
-        if pdf is None: pdf = PDF2D(*args, **kwargs)
+    def __init__(self,
+                 *args,
+                 pdf=None,
+                 constraint=PassThrough(),
+                 n=None,
+                 xaxis=None,
+                 yaxis=None,
+                 **kwargs):
+        if n is not None:
+           self.n = n
+           self.xaxis = xaxis
+           self.yaxis = yaxis
+
+        else:
+            if pdf is None: pdf = PDF2D(*args, **kwargs)
         
-        self.n = CDF2D._from_pdf(pdf.n, pdf.yaxis.edges)
+            self.n = CDF2D._from_pdf(pdf.n, pdf.yaxis.edges)
         
-        self.xaxis = pdf.xaxis
-        self.yaxis = pdf.yaxis
+            self.xaxis = pdf.xaxis
+            self.yaxis = pdf.yaxis
         self.constraint = constraint
 
     @staticmethod
@@ -59,7 +73,16 @@ class CDF2D(Hist2D):
             c = np.cumsum(p)
             n[i,:] = c
         return n
-        
+    
+    @staticmethod
+    def FromH5(file_name_or_handle, path, constraint=PassThrough()):
+        h = Hist2D.FromH5(file_name_or_handle, path)
+        cdf = CDF2D(n=h.n,
+                    xaxis=h.xaxis,
+                    yaxis=h.yaxis,
+                    constraint=constraint)
+        return cdf
+    
     def Sample(self, x):
         ix = self.xaxis.FindBin(x)
         return CDF2D._sample1d(self.n[ix, :], self.yaxis.edges)
@@ -134,31 +157,52 @@ def xbins_equal_prob(nominal, shifted, xbins, ybins):
     return nominal, shifted, xedges, ybins
 
 class BinOptimizer:
-    DEFAULT_MINIMIZER_OPTS = {'initial_constr_penalty': 1000,
-                              'finite_diff_rel_step': 0.001}    
+    DEFAULT_MINIMIZER_OPTS = {'initial_constr_penalty': 1000,'finite_diff_rel_step': 0.001}
     def __init__(self,
                  nbins,
                  range,
                  axis=0,
                  analytic_jacobian=True,
-                 minimizer_opts=None):
+                 minimizer_opts=None,
+                 pad=0,
+                 exaggerate_jac=1,
+                 noise_scale=0.1):
         self.axis = axis
         self.nbins = nbins
-        self.bins = [[], []]
+        self.bins = [[],[]]
+        
+
+        # here's the initial guess. Evenly spaced bins
         self.bins[axis] = np.linspace(*range, self.nbins+1)
         
         self.results = None
         self.minimizer_opts = BinOptimizer.DEFAULT_MINIMIZER_OPTS
         self.minimizer_opts.update(minimizer_opts)
 
-        jac = partial(self._jac, lb=range[0], ub=range[0]) if analytic_jacobian else '2-point'
+        print('Minimizer options')
+        print(json.dumps(self.minimizer_opts, indent=4))
+
+        self.pad = (range[1] - range[0]) * pad
+        self.exaggerate_jac = exaggerate_jac
+        self.noise_scale = (self.bins[self.axis][-1] - self.bins[self.axis][0]) * noise_scale        
         
+        jac = partial(self._jac, lb=range[0], ub=range[0], exagg=self.exaggerate_jac) if analytic_jacobian else '3-point'
+        finite_diff_jac_sparsity = None
+        print('Jacobian:', jac)
+        if type(jac) is str:
+            finite_diff_jac_sparsity = np.identity(self.nbins-1)
+            finite_diff_jac_sparsity[:-1,1:] += np.identity(self.nbins-2)
+            finite_diff_jac_sparsity[1:,:-1] += np.identity(self.nbins-2)
+            print(finite_diff_jac_sparsity)
+            
+
         self.constraint = scipy.optimize.NonlinearConstraint(partial(BinOptimizer._c,
                                                                      lb=range[0],
                                                                      ub=range[1]),
-                                                             np.zeros(self.nbins - 1),
-                                                             np.ones(self.nbins - 1),
-                                                             jac=jac)
+                                                             np.zeros(self.nbins - 1) + self.pad,
+                                                             np.ones(self.nbins - 1) * (1 - self.pad),
+                                                             jac=jac,
+                                                             finite_diff_jac_sparsity=finite_diff_jac_sparsity)
 
         self.best_chisq = 1e10
         self.best_bins = None
@@ -178,6 +222,14 @@ class BinOptimizer:
         
         self._update(self.results.x)
         return self.results
+
+    def _add_noise(self, scale):
+        self._update(np.sort(np.random.normal(self.bins[self.axis][1:-1], scale)))
+
+    def _random_seed(self):
+        self._update(np.sort(np.random.uniform(self.bins[self.axis][ 0],
+                                               self.bins[self.axis][-1],
+                                               size=len(self.bins[self.axis])-2)))
         
     def _update(self, floating_bins):
         self.bins[self.axis][1:-1] = floating_bins
@@ -198,29 +250,31 @@ class BinOptimizer:
     def _c(x, lb, ub):
         c = np.zeros(len(x))
         c[0 ] = (x[0] - lb) / (x[1] - lb)
-        c[-1] = (x[-1] - x[-2] ) / (ub - x[-2])
+        c[-1] = (x[-1] - x[-2]) / (ub - x[-2])
         for i in range(1,len(x)-1):
             c[i] = (x[i] - x[i-1]) / (x[i+1] - x[i-1])
         return c
     
     @staticmethod
     @numba.jit(nopython=True)
-    def _jac(x, lb, ub):
+    def _jac(x, lb, ub, exagg):
         jac = np.zeros((len(x), len(x)))
         jac[0,0] = 1 / (x[1] - lb)
         jac[0,1] = (lb - x[0]) / (x[1] - lb)**2
-        jac[1,0] = jac[0,1]
 
         jac[-1,-1] = 1 / (ub - x[-2])
+        jac[-1,-2] = (x[-1] - x[-2])  / (ub - x[-2])**2
         for i in range(1, len(x)-1):
             #\delta_{i,j}
             jac[i,i] = 1 / (x[i+1] - x[i-1])
 
             #\delta_{i+1,j}
             jac[i, i+1] = (x[i-1] - x[i]) / (x[i+1] - x[i-1])**2
-            jac[i+1, i] = jac[i, i+1]
 
-        return jac
+            #\delta_{i-1, j}
+            jac[i, i-1] = jac[i, i+1]
+
+        return jac * exagg
 
 class TestBinOptimizer(BinOptimizer):
     def __init__(self, *args, **kwargs):
@@ -241,11 +295,17 @@ class CDFBinOptimizer(BinOptimizer):
     def __init__(self,
                  obj_bins,
                  cdf_factory=CDF2D,
+                 retries=0,
+                 nquick_seeds=1,
+                 nmultistarts=1,
                  **kwargs):
         super().__init__(axis=0, **kwargs) 
         self.obj_bins = obj_bins
         
         self.cdf_factory = cdf_factory
+        self.retries=retries
+        self.nquick_seeds = nquick_seeds
+        self.nmultistarts = nmultistarts
 
     @staticmethod
     def FromConfig(config):
@@ -253,30 +313,71 @@ class CDFBinOptimizer(BinOptimizer):
                                cdf_factory=partial(CDF2D, constraint=config.bounds),
                                nbins=config.xbins,
                                range=config.xlim,
-                               minimizer_opts=config.minimizer_opts)
+                               minimizer_opts=config.minimizer_opts,
+                               pad=config.pad,
+                               noise_scale=config.noise_scale,
+                               exaggerate_jac=config.exaggerate_jac,
+                               retries=config.retries,
+                               analytic_jacobian=config.analytic_jacobian,
+                               nquick_seeds=config.nquick_seeds,
+                               nmultistarts=config.nmultistarts)
 
 
         
     def __call__(self, nominal, shifted, xbins, ybins, **kwargs):
-        super().__call__(partial(self.fun,
-                                 nominal=nominal,
-                                 target=shifted),
-                         xbins, ybins,
-                         **kwargs)
-        return nominal, shifted, self.bins[0], self.bins[1]         
+        # generate random seed bins from a uniform distribution
+        seeds  = np.array([np.sort(np.random.uniform(self.bins[0][ 0],
+                                                     self.bins[0][-1],
+                                                     self.bins[0].shape[0]-2))
+                           for _ in range(max(self.nquick_seeds,
+                                              self.nmultistarts))])
+        
+
+        self.bins[1] = ybins
+        
+        seed_chi2 = []
+        for iseed in range(self.nquick_seeds):
+            self.bins[0][1:-1] = seeds[iseed]
+            seed_chi2.append(self.fun(nominal, shifted))
+
+        sorted_idx = np.argsort(seed_chi2).astype(int)
+        print(''.join(['-'] * 40))
+        print('Quick seed results:')
+        for n, idx in enumerate(sorted_idx):
+            print(n+1, seed_chi2[idx], seeds[idx])
+        print(''.join(['-'] * 40))
+        self.bins[0][1:-1] = seeds[sorted_idx[0]]
+
+
+        seeds = seeds[sorted_idx[:self.nmultistarts]]
+        for start in range(self.nmultistarts):
+            self.bins[0][1:-1] = seeds[start]
+            
+            for retry in range(self.retries+1):
+                try:
+                    super().__call__(partial(self.fun,
+                                         nominal=nominal,
+                                         target=shifted),
+                                     xbins, ybins,
+                                     **kwargs)
+                
+                except ValueError as err:
+                    print(f'Error: Fell into a non-monotonic parameter space. Retry {retry+1} / {self.retries}')
+                    print(err)
+                    # if we reach the last restart, return the best results so far and add a little noise
+                    self.bins[self.axis] = np.sort(self.best_bins)
+                    self._add_noise(scale=self.noise_scale)
+                
+                    continue
+                break
+            
+        self.bins[0] = self.best_bins
+        return nominal, shifted, self.bins[0], self.bins[1]
     
     def fun(self, nominal, target):
-        try:
-            cdf = self.cdf_factory(nominal, target, xbins=self.bins[0], ybins=self.bins[1])
-        except ValueError as err:
-            print('Error: somehow fell into a non-monotonic parameter space')
-            print(self.bins[self.axis])
-            raise err
-            
-        
+        cdf = self.cdf_factory(nominal, target, xbins=self.bins[0], ybins=self.bins[1])        
         hshifted = Hist1D(np.array([cdf.Shift(x) for x in nominal]), bins=self.obj_bins)
         htarget  = Hist1D(target, bins=self.obj_bins)
-        
         return chisq(htarget.n, hshifted.n)
 
 
