@@ -1,5 +1,5 @@
 from hepanatools.shift.hist import Hist1D, Hist2D
-from hepanatools.utils.math import chisq, not_quite_chisq
+from hepanatools.utils.math import chisq
 import scipy.optimize    
 import numba
 import numpy as np
@@ -163,7 +163,7 @@ class BinOptimizer:
                  range,
                  axis=0,
                  analytic_jacobian=True,
-                 minimizer_opts=None,
+                 minimizer_opts=dict(),
                  pad=0,
                  exaggerate_jac=1,
                  noise_scale=0.1):
@@ -290,7 +290,6 @@ class TestBinOptimizer(BinOptimizer):
                          **kwargs)
         return self.results
         
-        
 class CDFBinOptimizer(BinOptimizer):
     def __init__(self,
                  obj_bins,
@@ -380,12 +379,56 @@ class CDFBinOptimizer(BinOptimizer):
         htarget  = Hist1D(target, bins=self.obj_bins)
         return chisq(htarget.n, hshifted.n)
 
-
+class BruteResult:
+    def __init__(self, fun, jac=None):
+        self.fun = fun
+        self.jac = jac
 class Callback:
     def __init__(self, report_every=5):
         self.nfcn = 0
         self._report_every = report_every
+    def __call__(self, xk, state):
+        pass
         
+class BruteCDFBinOptimizer(CDFBinOptimizer):
+    def __init__(self,
+                 *args,
+                 nsamples=100,
+                 **kwargs):
+        super().__init__(*args, **kwargs)
+        self.nsamples = nsamples
+
+    @staticmethod
+    def FromConfig(config):
+        return BruteCDFOptimizer(config.objective_bins,
+                                 cdf_factory=partial(CDF2D,constraint=config.bounds),
+                                 nbins=config.xbins,
+                                 range=config.xlim,
+                                 samples=config.brute_samples)
+
+    def __call__(self, nominal, shifted, xbins, ybins, callback=Callback()):
+        self.bins[1] = ybins
+        samples = np.sort(np.random.uniform(self.bins[0][ 0],
+                                            self.bins[0][-1],
+                                            (len(self.bins[0])-2,
+                                             self.nsamples)),
+                          axis=0)
+        fun_vals = []
+        for isample in range(samples.shape[1]):
+            self._update(samples[:, isample])
+            fun_vals.append(self.fun(nominal, shifted))
+            
+        fun_vals = np.array(fun_vals)
+        
+        sorted_idx = np.argsort(fun_vals)[::-1]
+
+        for idx in sorted_idx:
+            callback(samples[:,idx], BruteResult(fun_vals[idx]))
+
+        self._update(samples[:,sorted_idx[0]])
+        return nominal, shifted, self.bins[0], self.bins[1]
+
+            
 class VerbosityCallback(Callback):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -444,3 +487,5 @@ class ProgressTrackerCallback(Callback):
         ax.set_ylabel('Iterations')
 
         return ax        
+
+    
