@@ -50,6 +50,9 @@ class EventMatchedTable:
     def __getitem__(self, key):
         return self.tables[key]
 
+    def __setitem__(self, key, val):
+        self.tables[key] = val
+
     def keys(self):
         return self.tables.keys()
 
