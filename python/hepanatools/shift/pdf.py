@@ -8,11 +8,19 @@ import json
 
 
 class Bounds:
-    def __init__(self, lb, ub):
+    """Simple bounds with upper and lower limits."""
+
+    def __init__(self, lb: float, ub: float):
         self.lb = lb
         self.ub = ub
 
-    def __call__(self, x):
+    def __call__(self, x: float) -> float:
+        """
+        If x is less than the upper bound and greater than the lower bound,
+        return x.
+        If x is greater than upper bound, return upper bound.
+        If x is less than lower bound, return lower bound.
+        """
         if x > self.ub:
             return self.ub
         if x < self.lb:
@@ -21,10 +29,13 @@ class Bounds:
 
 
 class PassThrough:
+    """No-op object."""
+
     def __init__(self):
         pass
 
     def __call__(self, x):
+        """No-op"""
         return x
 
 
@@ -203,12 +214,11 @@ class BinOptimizer:
             else "3-point"
         )
         finite_diff_jac_sparsity = None
-        print("Jacobian:", jac)
+
         if type(jac) is str:
             finite_diff_jac_sparsity = np.identity(self.nbins - 1)
             finite_diff_jac_sparsity[:-1, 1:] += np.identity(self.nbins - 2)
             finite_diff_jac_sparsity[1:, :-1] += np.identity(self.nbins - 2)
-            print(finite_diff_jac_sparsity)
 
         self.constraint = scipy.optimize.NonlinearConstraint(
             partial(BinOptimizer._c, lb=range[0], ub=range[1]),
@@ -387,7 +397,12 @@ class CDFBinOptimizer(BinOptimizer):
         for start in range(self.nmultistarts):
             self.bins[0][1:-1] = seeds[start]
 
-            for retry in range(self.retries + 1):
+            # It's possible for the fitter to disobey the constraint
+            # that bins must be monotonically increasing.
+            # If that happens, catch it and add a little bit of noise
+            # to this start's seed so hopefully we don't fall down the same
+            # rabbit hole.
+            for retry in range(self.retries):
                 try:
                     super().__call__(
                         partial(self.fun, nominal=nominal, target=shifted),
@@ -401,13 +416,18 @@ class CDFBinOptimizer(BinOptimizer):
                         f"Error: Fell into a non-monotonic parameter space. Retry {retry+1} / {self.retries}"
                     )
                     print(err)
-                    # if we reach the last restart, return the best results so far and add a little noise
-                    self.bins[self.axis] = np.sort(self.best_bins)
+                    self._update(seeds[start])
                     self._add_noise(scale=self.noise_scale)
 
+                    # if this does happen, go to the top of the inner loop
                     continue
+
+                # if the fit succeeds, break the inner loop
                 break
 
+        assert np.array_equal(
+            self.best_bins, np.sort(self.best_bins)
+        ), "Error: Fit did not yield a valid set of bins."
         self.bins[0] = self.best_bins
         return nominal, shifted, self.bins[0], self.bins[1]
 
