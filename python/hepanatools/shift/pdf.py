@@ -389,7 +389,7 @@ class CDFBinOptimizer(BinOptimizer):
         print("".join(["-"] * 40))
         print("Quick seed results:")
         for n, idx in enumerate(sorted_idx):
-            print(n + 1, seed_chi2[idx], seeds[idx])
+            print(n + 1, "%.3f" % seed_chi2[idx], seeds[idx])
         print("".join(["-"] * 40))
         self.bins[0][1:-1] = seeds[sorted_idx[0]]
 
@@ -415,9 +415,8 @@ class CDFBinOptimizer(BinOptimizer):
                     print(
                         f"Error: Fell into a non-monotonic parameter space. Retry {retry+1} / {self.retries}"
                     )
-                    print(err)
                     self._update(seeds[start])
-                    self._add_noise(scale=self.noise_scale)
+                    self._add_noise(scale=self.noise_scale * 2 ** (retry + 1))
 
                     # if this does happen, go to the top of the inner loop
                     continue
@@ -428,7 +427,11 @@ class CDFBinOptimizer(BinOptimizer):
         assert np.array_equal(
             self.best_bins, np.sort(self.best_bins)
         ), "Error: Fit did not yield a valid set of bins."
+
         self.bins[0] = self.best_bins
+        print("Results")
+        print("chisq = %.2f" % self.best_chisq)
+        print("bins  = ", self.bins[0])
         return nominal, shifted, self.bins[0], self.bins[1]
 
     def fun(self, nominal, target):
@@ -550,7 +553,7 @@ class ProgressTrackerCallback(Callback):
         cb = plt.colorbar(sm, ax=ax)
         cb.set_label(r"$\chi^2$")
 
-        ax.set_yticks(self.fun_calls[::10])
+        # ax.set_yticks(self.fun_calls[np.arange(len(self.fun_calls),)])
         ax.set_xlim([lb, ub])
         ax.set_ylabel("Iterations")
 
