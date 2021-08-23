@@ -60,6 +60,16 @@ class CDF2D(Hist2D):
         yaxis=None,
         **kwargs,
     ):
+        self.Shift = np.vectorize(
+            self._sshift,
+            otypes=[float],
+            doc="Get shifted value given the nominal value by sampling the CDF",
+        )
+        self.Sample = np.vectorize(
+            self._ssample,
+            otypes=[float],
+            doc="Sample the CDF to get a value of absolute change in the input variable",
+        )
         if n is not None:
             self.n = n
             self.xaxis = xaxis
@@ -93,11 +103,14 @@ class CDF2D(Hist2D):
         cdf = CDF2D(n=h.n, xaxis=h.xaxis, yaxis=h.yaxis, constraint=constraint)
         return cdf
 
-    def Sample(self, x):
+    def _ssample(self, x):
+        """To be wrapped with np.vectorize"""
+
         ix = self.xaxis.FindBin(x)
         return CDF2D._sample1d(self.n[ix, :], self.yaxis.edges)
 
-    def Shift(self, x):
+    def _sshift(self, x):
+        """To be wrapped with np.vectorize"""
         return self.constraint(self.Sample(x) + x)
 
     @numba.jit(nopython=True)
@@ -135,6 +148,21 @@ def ybins1(nominal, shifted, xbins, ybins):
         shifted,
         xbins,
         np.linspace(mean - 5 * std, mean + 5 * std, ybins + 1),
+    )
+
+def ybins1_symmetric(nominal, shifted, xbins, ybins):
+    """
+    Symmeterized version of ybins1
+    """
+    abs_shifts = shifted - nominal
+    mean = abs_shifts.mean()
+    std = abs_shifts.std()
+    return (
+        nominal,
+        shifted,
+        xbins,
+        np.concatenate((np.linspace(mean - 5 * std, 0, ybins / 2 + 1),
+                        np.linspace(0, mean + 5 * std, ybins / 2 + 1)[1:]))
     )
 
 
