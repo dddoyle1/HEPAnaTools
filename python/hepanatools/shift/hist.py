@@ -91,9 +91,9 @@ class Hist1D:
         if histtype == "error":
             bin_widths = np.diff(self.xaxis.edges)
             bin_centers = (self.xaxis.edges[:-1] + self.xaxis.edges[1:]) / 2
-            yerr = np.sqrt(self.n)
+            if not 'yerr' in kwargs: kwargs.update({'yerr': np.sqrt(self.n)})
             ax.errorbar(
-                bin_centers, self.n, xerr=bin_widths / 2, yerr=yerr, fmt=".", **kwargs
+                bin_centers, self.n, xerr=bin_widths / 2, fmt=".", **kwargs
             )
         else:
             ax.hist(
