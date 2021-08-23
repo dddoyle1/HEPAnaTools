@@ -102,18 +102,20 @@ if rank == 0:
         )
 
         ratio_evt_shift = Hist1D.Filled(
-            hists["evt_shifted"].n / hists["file_shifted"].n, hists["evt_shifted"].xaxis
+            hists["evt_shifted"].n / hists["nominal"].n, hists["evt_shifted"].xaxis
         )
-        ratio_nominal = Hist1D.Filled(
-            hists["nominal"].n / hists["file_shifted"].n, hists["nominal"].xaxis
+        ratio_file_shift = Hist1D.Filled(
+            hist["file_shifted"].n / hists["nominal"].n, hists["file_shifted"].xaxis
         )
 
         bottom.axhline(1, linestyle="--", color="gray")
         ratio_evt_shift.Draw(bottom, histtype="step", color="r", lw=2)
-        ratio_nominal.Draw(bottom, histtype="step", color="b", lw=2)
+        ratio_file_shifted.Draw(bottom, histtype="step", color="b", lw=2)
 
         top.set_ylabel("Events")
+        bottom.set_ylabel("Shift / Nominal")
         bottom.set_ylim([0.5, 1.5])
+
         return top, bottom
 
     ax[0][0], ax[1][0] = plot_split(
