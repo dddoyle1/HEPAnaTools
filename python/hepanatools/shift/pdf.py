@@ -5,6 +5,8 @@ import numba
 import numpy as np
 from functools import partial
 import json
+from mpi4py import MPI
+import sys
 
 
 class Bounds:
@@ -231,8 +233,10 @@ class BinOptimizer:
         self.minimizer_opts = BinOptimizer.DEFAULT_MINIMIZER_OPTS
         self.minimizer_opts.update(minimizer_opts)
 
-        print("Minimizer options")
-        print(json.dumps(self.minimizer_opts, indent=4))
+        if MPI.COMM_WORLD.Get_rank() == 0:
+            print("Minimizer options")
+            print(json.dumps(self.minimizer_opts, indent=4))
+            sys.stdout.flush()
 
         self.pad = (range[1] - range[0]) * pad
         self.exaggerate_jac = exaggerate_jac
@@ -400,6 +404,8 @@ class CDFBinOptimizer(BinOptimizer):
 
     def __call__(self, nominal, shifted, xbins, ybins, **kwargs):
         self.target = Hist1D(shifted-nominal, self.obj_bins)
+        nseeds = max(self.nquick_seeds, self.nmultistarts)
+
         # generate random seed bins from a uniform distribution
         seeds = np.array(
             [
@@ -408,28 +414,50 @@ class CDFBinOptimizer(BinOptimizer):
                         self.bins[0][0], self.bins[0][-1], self.bins[0].shape[0] - 2
                     )
                 )
-                for _ in range(max(self.nquick_seeds, self.nmultistarts))
+                for _ in range(nseeds)
             ]
         )
 
         self.bins[1] = ybins
 
         seed_chi2 = []
-        for iseed in range(self.nquick_seeds):
+        for iseed in range(nseeds):
             self.bins[0][1:-1] = seeds[iseed]
             seed_chi2.append(self.fun(nominal, shifted))
 
-        sorted_idx = np.argsort(seed_chi2).astype(int)
-        print("".join(["-"] * 40))
-        print("Quick seed results:")
-        for n, idx in enumerate(sorted_idx):
-            print(n + 1, "%.3f" % seed_chi2[idx], seeds[idx])
-        print("".join(["-"] * 40))
-        self.bins[0][1:-1] = seeds[sorted_idx[0]]
+        # collect seed results from all ranks
+        comm = MPI.COMM_WORLD
+        seed_chi2 = comm.gather(seed_chi2, root=0)
+        seeds = comm.gather(seeds, root=0)
 
-        seeds = seeds[sorted_idx[: self.nmultistarts]]
-        for start in range(self.nmultistarts):
-            self.bins[0][1:-1] = seeds[start]
+        # sort among all ranks and report results
+        if comm.Get_rank() == 0:
+            seeds = np.concatenate(seeds)
+            seed_chi2 = np.concatenate(seed_chi2)
+            sorted_idx = np.argsort(seed_chi2).astype(int)
+            seeds = seeds[sorted_idx]
+            seed_chi2 = seed_chi2[sorted_idx]
+            print("".join(["-"] * 40))
+            print("Quick seed results:")
+            for n in range(nseeds):
+                print(n + 1, "%.3f" % seed_chi2[n], seeds[n])
+            print("".join(["-"] * 40))
+            sys.stdout.flush()
+        else:
+            seeds = np.empty((comm.Get_size() * nseeds, self.bins[0].shape[0] - 2,))
+            seed_chi2 = np.empty(comm.Get_size() * nseeds,)
+        # broadcast from rank one, and have each rank work on a different piece
+        comm.Bcast(seed_chi2, root=0)
+        comm.Bcast(seeds, root=0)
+
+        offset = comm.Get_rank()
+        stride = comm.Get_size()
+        nseeds_to_do = (
+            int(self.nmultistarts / comm.Get_size())
+            + self.nmultistarts % comm.Get_size()
+        )
+        for start in range(nseeds_to_do):
+            self.bins[0][1:-1] = seeds[offset::stride][start]
 
             # It's possible for the fitter to disobey the constraint
             # that bins must be monotonically increasing.
@@ -462,18 +490,37 @@ class CDFBinOptimizer(BinOptimizer):
             self.best_bins, np.sort(self.best_bins)
         ), "Error: Fit did not yield a valid set of bins."
 
-        self.bins[0] = self.best_bins
-        print("Results")
-        print("chisq = %.2f" % self.best_chisq)
-        print("bins  = ", self.bins[0])
+        nbins = self.bins[0].shape[0]
+        # collect best fit results from all ranks
+        best_bins = comm.gather(self.best_bins, root=0)
+        best_chisqs = comm.gather(self.best_chisq, root=0)
+
+        # Have rank 0 find the best fit of all ranks and print results
+        if comm.Get_rank() == 0:
+            best_rank = np.argsort(best_chisqs).astype(int)[0]
+            self.bins[0] = best_bins[best_rank]
+            best_chisq_buffer = np.array([best_chisqs[best_rank]])
+            print("Results")
+            print("chisq = %.2f" % self.best_chisq)
+            print("bins  = ", self.bins[0])
+            sys.stdout.flush()
+        else:
+            self.bins[0] = np.empty(nbins)
+            best_chisq_buffer = np.empty(1)
+
+        # broadcast best fit from rank 0
+        comm.Bcast(self.bins[0], root=0)
+        comm.Bcast(best_chisq_buffer, root=0)
+
+        self.best_chisq = best_chisq_buffer[0]
+
         return nominal, shifted, self.bins[0], self.bins[1]
 
     def fun(self, nominal, shifted):
         cdf = self.cdf_factory(nominal, shifted, xbins=self.bins[0], ybins=self.bins[1])
-        hshifted = Hist1D(cdf.Sample(nominal), bins=self.obj_bins)
+        hshifted = Hist1D([cdf._ssample(x) for x in nominal], bins=self.obj_bins)
 
         return chisq(self.target.n, hshifted.n)
-
 
 class BruteResult:
     def __init__(self, fun, jac=None):
@@ -556,7 +603,10 @@ class ProgressTrackerCallback(Callback):
             self.fun_calls.append(self.nfcn)
             self.fun_vals.append(state.fun)
             if self.verbose:
-                print(self.nfcn, state.fun, xk)
+                print(
+                    f"[{MPI.COMM_WORLD.Get_rank()}] {self.nfcn}  {state.fun:.2f}", xk,
+                )
+                sys.stdout.flush()
         self.nfcn += 1
         return False
 

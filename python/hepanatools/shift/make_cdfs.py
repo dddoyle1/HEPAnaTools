@@ -12,7 +12,8 @@ from sklearn.model_selection import train_test_split
 import os
 import matplotlib.pyplot as plt
 
-# from mpi4py import MPI
+from mpi4py import MPI
+import sys
 
 parser = argparse.ArgumentParser()
 parser.add_argument("cdf_config", help="JSON file with optimization configuration")
@@ -37,7 +38,11 @@ parser.add_argument(
 args = parser.parse_args()
 
 # create bin optimizer from configuration file
-config = parse_cdf_config(["-c", args.cdf_config])
+config, config_parser = parse_cdf_config(["-c", args.cdf_config])
+if MPI.COMM_WORLD.Get_rank() == 0:
+    config_parser.print_values()
+    sys.stdout.flush()
+
 
 tables = EventMatchedTable.FromH5(config.event_tables)
 
@@ -71,22 +76,30 @@ if not args.load_from:
         constraint=config.bounds,
         bins_func=partial(bins_func, callback=progress),
     )
-    mode = "w" if args.overwrite else "a"
-    with h5py.File(config.output, mode) as f:
-        cdf.ToH5(f, config.name)
+    comm = MPI.COMM_WORLD
+    progress_callbacks = comm.gather(progress, root=0)
 
-else:
-    cdf = CDF2D.FromH5(config.output, config.name)
-    binopt.target = Hist1D(shifted - nominal, config.objective_bins)
-
-# mpi reductions happen here to find the global best fit
-rank = 0
-if rank == 0:
     mode = "w" if args.overwrite else "a"
     with h5py.File(config.output, mode) as f:
         cdf.ToH5(f, config.name)
     with h5py.File(config.save_progress, mode) as f:
-        progress.ToH5(f, config.name)
+        for i, cb in enumerate(progress_callbacks):
+            cb.ToH5(f, f"{config.name}_{i}")
+
+else:
+    cdf = CDF2D.FromH5(config.output, config.name)
+    with h5py.File(config.save_progress, "r") as f:
+        nprogress = len(f.keys())
+        progress_callbacks = []
+        for iprog in range(nprogress):
+            progress_callbacks.append(
+                ProgressTrackerCallback.FromH5(
+                    config.save_progress, f"{config.name}_{i}"
+                )
+            )
+
+
+if MPI.COMM_WORLD.Get_rank() == 0:
 
     fig, ax = hpl.split_subplots(nrows=2, figsize=(10, 8))
     binopt.target.Draw(ax[0], histtype="step", hatch="//", color="k", label="Target")
@@ -98,10 +111,10 @@ if rank == 0:
     hpl.savefig(os.path.join(config.plots, f"{config.name}_cdf_vs_target.pdf"))
     plt.close()
 
-    if not args.load_from:
+    for i, cb in enumerate(progress_callbacks):
         fig, ax = plt.subplots(figsize=(10, 5))
-        progress.Draw(*config.xlim, ax)
-        hpl.savefig(os.path.join(config.plots, f"{config.name}_progress.pdf"))
+        cb.Draw(*config.xlim, ax)
+        hpl.savefig(os.path.join(config.plots, f"{config.name}_progress_{i}.pdf"))
         plt.close()
 
     fig, ax = plt.subplots(figsize=(10, 5))

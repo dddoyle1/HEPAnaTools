@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import matplotlib
+import sys
 
 # global style settings
 matplotlib.rcParams.update({"font.size": 16})
@@ -13,5 +14,6 @@ def split_subplots(*args, **kwargs):
 
 def savefig(name, **kwargs):
     print(f"Writing {name}")
+    sys.stdout.flush()
     plt.savefig(name, **kwargs)
     plt.close()
