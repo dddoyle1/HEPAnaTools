@@ -29,7 +29,11 @@ parser.add_argument(
     default=5,
     type=int,
 )
-
+parser.add_argument(
+    "--load_from",
+    action="store_true",
+    help="Load CDF from file specified in the configuration file and make plots",
+)
 args = parser.parse_args()
 
 # create bin optimizer from configuration file
@@ -58,21 +62,26 @@ train_shifted = shifted[train_idx]
 test_nominal = nominal[test_idx]
 test_shifted = shifted[test_idx]
 
-cdf = CDF2D(
-    train_nominal,
-    train_shifted,
-    xbins=config.xbins,
-    ybins=config.ybins,
-    constraint=config.bounds,
-    bins_func=partial(bins_func, callback=progress),
-)
+if not args.load_from:
+    cdf = CDF2D(
+        train_nominal,
+        train_shifted,
+        xbins=config.xbins,
+        ybins=config.ybins,
+        constraint=config.bounds,
+        bins_func=partial(bins_func, callback=progress),
+    )
+    mode = "w" if args.overwrite else "a"
+    with h5py.File(config.output, mode) as f:
+        cdf.ToH5(f, config.name)
+
+else:
+    cdf = CDF2D.FromH5(config.output, config.name)
+    binopt.target = Hist1D(shifted - nominal, config.objective_bins)
 
 # mpi reductions happen here to find the global best fit
 rank = 0
 if rank == 0:
-    mode = "w" if args.overwrite else "a"
-    with h5py.File(config.output, mode) as f:
-        cdf.ToH5(f, config.name)
 
     fig, ax = hpl.split_subplots(nrows=2, figsize=(10, 8))
     binopt.target.Draw(ax[0], histtype="step", hatch="//", color="k", label="Target")
@@ -84,10 +93,11 @@ if rank == 0:
     hpl.savefig(os.path.join(config.plots, f"{config.name}_cdf_vs_target.pdf"))
     plt.close()
 
-    fig, ax = plt.subplots(figsize=(10, 5))
-    progress.Draw(*config.xlim, ax)
-    hpl.savefig(os.path.join(config.plots, f"{config.name}_progress.pdf"))
-    plt.close()
+    if not args.load_from:
+        fig, ax = plt.subplots(figsize=(10, 5))
+        progress.Draw(*config.xlim, ax)
+        hpl.savefig(os.path.join(config.plots, f"{config.name}_progress.pdf"))
+        plt.close()
 
     fig, ax = plt.subplots(figsize=(10, 5))
     cdf.Draw(ax)
@@ -114,8 +124,8 @@ if rank == 0:
         ratio_evt_shift = Hist1D.Filled(
             hists["evt_shifted"].n / hists["nominal"].n, hists["evt_shifted"].xaxis
         )
-        ratio_file_shift = Hist1D.Filled(
-            hist["file_shifted"].n / hists["nominal"].n, hists["file_shifted"].xaxis
+        ratio_file_shifted = Hist1D.Filled(
+            hists["file_shifted"].n / hists["nominal"].n, hists["file_shifted"].xaxis
         )
 
         bottom.axhline(1, linestyle="--", color="gray")
@@ -129,7 +139,7 @@ if rank == 0:
         return top, bottom
 
     ax[0][0], ax[1][0] = plot_split(
-        ax[0][0], ax[1][0], train_nominal, train_shifted, config.objective_bins, cdf
+        ax[0][0], ax[1][0], train_nominal, train_shifted, config.var_bins, cdf
     )
     ax[1][0].set_xlabel(config.var_label)
     ax[0][0].legend()
@@ -137,7 +147,7 @@ if rank == 0:
     ax[0][0].set_title("Training (%.1f%%)" % train_frac)
 
     ax[0][1], ax[1][1] = plot_split(
-        ax[0][1], ax[1][1], test_nominal, test_shifted, config.objective_bins, cdf
+        ax[0][1], ax[1][1], test_nominal, test_shifted, config.var_bins, cdf
     )
     ax[1][1].set_xlabel(config.var_label)
     test_frac = test_nominal.shape[0] / nominal.shape[0] * 100

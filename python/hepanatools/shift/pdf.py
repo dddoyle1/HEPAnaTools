@@ -374,6 +374,7 @@ class CDFBinOptimizer(BinOptimizer):
         self.retries = retries
         self.nquick_seeds = nquick_seeds
         self.nmultistarts = nmultistarts
+        self.target = None
 
     @staticmethod
     def FromConfig(config):

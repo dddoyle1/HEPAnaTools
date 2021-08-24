@@ -126,6 +126,14 @@ def parse_cdf_config(args=None):
         help="Do N quick function evals at randomly generated seed points to find a good place to start the fit",
         metavar="N",
     )
+    parser.add_argument(
+        "--var_bins",
+        help="Bin edges in which to plot the variable, specified by --var_label, distribution. Exclusive with --var_bins_eval.",
+    )
+    parser.add_argument(
+        "--var_bins_eval",
+        help="Executable string to determine bins in which to plot the variable, specified by --var_label, distribution. Eg. np.linspace(...). Exclusive with --var_bins",
+    )
 
     if args:
         # parse "args"
@@ -144,6 +152,11 @@ def parse_cdf_config(args=None):
         )
     if config.objective_bins_eval:
         config.objective_bins = eval(config.objective_bins_eval)
+
+    if config.var_bins and config.var_bins_eval:
+        raise RuntimeError("--var_bins and --var_bins_eval are mutually exclusive")
+    if config.var_bins_eval:
+        config.var_bins = eval(config.var_bins_eval)
 
     config.xlim = np.array(config.xlim, dtype=float)
     if config.bounds:
