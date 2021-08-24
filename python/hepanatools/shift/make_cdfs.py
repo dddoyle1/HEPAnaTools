@@ -73,6 +73,8 @@ if rank == 0:
     mode = "w" if args.overwrite else "a"
     with h5py.File(config.output, mode) as f:
         cdf.ToH5(f, config.name)
+    with h5py.File(config.save_progress, mode) as f:
+        progress.ToH5(f, config.name)
 
     fig, ax = plt.subplots(figsize=(10, 5))
     progress.Draw(*config.xlim, ax)

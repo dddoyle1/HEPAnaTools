@@ -126,6 +126,12 @@ def parse_cdf_config(args=None):
         help="Do N quick function evals at randomly generated seed points to find a good place to start the fit",
         metavar="N",
     )
+    parser.add_argument(
+        "--save_progress",
+        default="progress.h5",
+        help="Save the progress tracker to FILE_NAME.h5",
+        metavar="FILE_NAME.h5",
+    )
 
     if args:
         # parse "args"
