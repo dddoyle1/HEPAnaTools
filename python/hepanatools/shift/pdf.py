@@ -271,6 +271,8 @@ class BinOptimizer:
     def __call__(self, fun, xbins, ybins, *, x0=None, **kwargs):
         if x0 is not None:
             self.bins[self.axis] = x0
+
+        # sets the axis that is not going to be optimized
         if self.axis == 0:
             self.bins[1] = ybins
         if self.axis == 1:
@@ -384,6 +386,7 @@ class CDFBinOptimizer(BinOptimizer):
         self.retries = retries
         self.nquick_seeds = nquick_seeds
         self.nmultistarts = nmultistarts
+        self.target = None
 
     @staticmethod
     def FromConfig(config):
@@ -403,6 +406,7 @@ class CDFBinOptimizer(BinOptimizer):
         )
 
     def __call__(self, nominal, shifted, xbins, ybins, **kwargs):
+        self.target = Hist1D(shifted, self.obj_bins)
         nseeds = max(self.nquick_seeds, self.nmultistarts)
         # generate random seed bins from a uniform distribution
         seeds = np.array(
@@ -465,7 +469,7 @@ class CDFBinOptimizer(BinOptimizer):
             for retry in range(self.retries):
                 try:
                     super().__call__(
-                        partial(self.fun, nominal=nominal, target=shifted),
+                        partial(self.fun, nominal=nominal, shifted=shifted),
                         xbins,
                         ybins,
                         **kwargs,
@@ -514,13 +518,12 @@ class CDFBinOptimizer(BinOptimizer):
 
         return nominal, shifted, self.bins[0], self.bins[1]
 
-    def fun(self, nominal, target):
-        cdf = self.cdf_factory(nominal, target, xbins=self.bins[0], ybins=self.bins[1])
+    def fun(self, nominal, shifted):
+        cdf = self.cdf_factory(nominal, shifted, xbins=self.bins[0], ybins=self.bins[1])
         hshifted = Hist1D(
             np.array([cdf._sshift(x) for x in nominal]), bins=self.obj_bins
         )
-        htarget = Hist1D(target, bins=self.obj_bins)
-        return chisq(htarget.n, hshifted.n)
+        return chisq(self.target.n, hshifted.n)
 
 
 class BruteResult:
