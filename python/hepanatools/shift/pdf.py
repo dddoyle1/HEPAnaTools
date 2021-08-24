@@ -150,6 +150,7 @@ def ybins1(nominal, shifted, xbins, ybins):
         np.linspace(mean - 5 * std, mean + 5 * std, ybins + 1),
     )
 
+
 def ybins1_symmetric(nominal, shifted, xbins, ybins):
     """
     Symmeterized version of ybins1
@@ -161,8 +162,12 @@ def ybins1_symmetric(nominal, shifted, xbins, ybins):
         nominal,
         shifted,
         xbins,
-        np.concatenate((np.linspace(mean - 5 * std, 0, ybins / 2 + 1),
-                        np.linspace(0, mean + 5 * std, ybins / 2 + 1)[1:]))
+        np.concatenate(
+            (
+                np.linspace(mean - 5 * std, 0, ybins / 2 + 1),
+                np.linspace(0, mean + 5 * std, ybins / 2 + 1)[1:],
+            )
+        ),
     )
 
 
@@ -555,6 +560,28 @@ class ProgressTrackerCallback(Callback):
                 print(self.nfcn, state.fun, xk)
         self.nfcn += 1
         return False
+
+    def ToH5(self, file_name_or_handle, path):
+        with FileNameOrHandle(file_name_or_handle, "w") as f:
+            g = f.create_group(path)
+            g.create_dataset("params", data=self.params, compression="gzip")
+            g.create_dataset("fun_vals", data=self.fun_vals, compression="gzip")
+            g.create_dataset("jac_vals", data=self.jac_vals, compression="gzip")
+            g.create_dataset("fun_calls", data=self.fun_calls, compression="gzip")
+
+    def FromH5(file_name_or_handle, path):
+        with FileNameOrHandle(file_name_or_handle, "r") as f:
+            g = f.get(path)
+            params = g.get("params")[:]
+            fun_vals = g.get("fun_vals")[:]
+            jac_vals = g.get("jac_vals")[:]
+            fun_calls = g.get("fun_calls")[:]
+        progress = ProgressTrackerCallback()
+        progress.params = params
+        progress.fun_vals = fun_vals
+        progress.jac_vals = jac_vals
+        progress.fun_calls = fun_calls
+        return progress
 
     def Draw(self, lb, ub, ax=None, cmap="plasma"):
         import matplotlib
