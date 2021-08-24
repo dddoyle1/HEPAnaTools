@@ -1,4 +1,4 @@
-from hepanatools.shift.hist import Hist1D, Hist2D
+from hepanatools.shift.hist import Hist1D, Hist2D, FileNameOrHandle
 from hepanatools.utils.math import chisq
 import scipy.optimize
 import numba
@@ -164,8 +164,8 @@ def ybins1_symmetric(nominal, shifted, xbins, ybins):
         xbins,
         np.concatenate(
             (
-                np.linspace(mean - 5 * std, 0, ybins / 2 + 1),
-                np.linspace(0, mean + 5 * std, ybins / 2 + 1)[1:],
+                np.linspace(mean - 5 * std, 0, int(ybins / 2) + 1),
+                np.linspace(0, mean + 5 * std, int(ybins / 2) + 1)[1:],
             )
         ),
     )
@@ -546,7 +546,6 @@ class ProgressTrackerCallback(Callback):
         super().__init__(**kwargs)
         self.params = []
         self.fun_vals = []
-        self.jac_vals = []
         self.fun_calls = []
         self.verbose = verbose
 
@@ -555,7 +554,6 @@ class ProgressTrackerCallback(Callback):
             self.params.append(xk)
             self.fun_calls.append(self.nfcn)
             self.fun_vals.append(state.fun)
-            self.jac_vals.append(state.jac)
             if self.verbose:
                 print(self.nfcn, state.fun, xk)
         self.nfcn += 1
@@ -566,7 +564,6 @@ class ProgressTrackerCallback(Callback):
             g = f.create_group(path)
             g.create_dataset("params", data=self.params, compression="gzip")
             g.create_dataset("fun_vals", data=self.fun_vals, compression="gzip")
-            g.create_dataset("jac_vals", data=self.jac_vals, compression="gzip")
             g.create_dataset("fun_calls", data=self.fun_calls, compression="gzip")
 
     def FromH5(file_name_or_handle, path):
@@ -574,12 +571,10 @@ class ProgressTrackerCallback(Callback):
             g = f.get(path)
             params = g.get("params")[:]
             fun_vals = g.get("fun_vals")[:]
-            jac_vals = g.get("jac_vals")[:]
             fun_calls = g.get("fun_calls")[:]
         progress = ProgressTrackerCallback()
         progress.params = params
         progress.fun_vals = fun_vals
-        progress.jac_vals = jac_vals
         progress.fun_calls = fun_calls
         return progress
 
