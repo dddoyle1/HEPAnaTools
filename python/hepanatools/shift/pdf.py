@@ -161,8 +161,8 @@ def ybins1_symmetric(nominal, shifted, xbins, ybins):
         nominal,
         shifted,
         xbins,
-        np.concatenate((np.linspace(mean - 5 * std, 0, ybins / 2 + 1),
-                        np.linspace(0, mean + 5 * std, ybins / 2 + 1)[1:]))
+        np.concatenate((np.linspace(mean - 5 * std, 0, int(ybins / 2) + 1),
+                        np.linspace(0, mean + 5 * std, int(ybins / 2) + 1)[1:]))
     )
 
 
@@ -197,7 +197,6 @@ def xbins_equal_prob(nominal, shifted, xbins, ybins):
         print(f"Warning: nbins changed from {xbins} --> {xedges.shape[0]}")
     xedges[-1] += 0.0001
     return nominal, shifted, xedges, ybins
-
 
 class BinOptimizer:
     DEFAULT_MINIMIZER_OPTS = {
@@ -394,6 +393,7 @@ class CDFBinOptimizer(BinOptimizer):
         )
 
     def __call__(self, nominal, shifted, xbins, ybins, **kwargs):
+        self.target = Hist1D(shifted-nominal, self.obj_bins)
         # generate random seed bins from a uniform distribution
         seeds = np.array(
             [
@@ -433,7 +433,7 @@ class CDFBinOptimizer(BinOptimizer):
             for retry in range(self.retries):
                 try:
                     super().__call__(
-                        partial(self.fun, nominal=nominal, target=shifted),
+                        partial(self.fun, nominal=nominal, shifted=shifted),
                         xbins,
                         ybins,
                         **kwargs,
@@ -462,11 +462,11 @@ class CDFBinOptimizer(BinOptimizer):
         print("bins  = ", self.bins[0])
         return nominal, shifted, self.bins[0], self.bins[1]
 
-    def fun(self, nominal, target):
-        cdf = self.cdf_factory(nominal, target, xbins=self.bins[0], ybins=self.bins[1])
-        hshifted = Hist1D(np.array([cdf.Shift(x) for x in nominal]), bins=self.obj_bins)
-        htarget = Hist1D(target, bins=self.obj_bins)
-        return chisq(htarget.n, hshifted.n)
+    def fun(self, nominal, shifted):
+        cdf = self.cdf_factory(nominal, shifted, xbins=self.bins[0], ybins=self.bins[1])
+        hshifted = Hist1D(cdf.Sample(nominal), bins=self.obj_bins)
+
+        return chisq(self.target.n, hshifted.n)
 
 
 class BruteResult:

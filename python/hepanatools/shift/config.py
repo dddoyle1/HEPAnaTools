@@ -47,7 +47,7 @@ def parse_cdf_config(args=None):
         "--ybins_func",
         required=False,
         help="Name of function to determine y-axis (pdf axis) binning",
-        default="hepanatools.shift.pdf.ybins1",
+        default="hepanatools.shift.pdf.ybins1_symmetric",
     )
     parser.add_argument(
         "--bounds",

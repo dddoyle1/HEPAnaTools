@@ -74,6 +74,16 @@ if rank == 0:
     with h5py.File(config.output, mode) as f:
         cdf.ToH5(f, config.name)
 
+    fig, ax = hpl.split_subplots(nrows=2, figsize=(10, 8))
+    binopt.target.Draw(ax[0], histtype="step", hatch="//", color="k", label="Target")
+    cdf_sampling = Hist1D(cdf.Sample(train_nominal), config.objective_bins)
+    cdf_sampling.Draw(ax=ax[0], histtype="step", color="r", label="CDF Sampling")
+    ax[1].axhline(1, ls="--", c="gray")
+    ratio = Hist1D.Filled(cdf_sampling.n / binopt.target.n, config.objective_bins)
+    ratio.Draw(ax[1], histtype="step", color="r")
+    hpl.savefig(os.path.join(config.plots, f"{config.name}_cdf_vs_target.pdf"))
+    plt.close()
+
     fig, ax = plt.subplots(figsize=(10, 5))
     progress.Draw(*config.xlim, ax)
     hpl.savefig(os.path.join(config.plots, f"{config.name}_progress.pdf"))
