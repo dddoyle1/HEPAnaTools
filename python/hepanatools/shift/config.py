@@ -164,5 +164,4 @@ def parse_cdf_config(args=None):
     if not os.path.isdir(config.plots):
         os.makedirs(config.plots)
 
-    parser.print_values()
-    return config
+    return config, parser

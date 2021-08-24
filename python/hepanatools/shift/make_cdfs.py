@@ -12,7 +12,8 @@ from sklearn.model_selection import train_test_split
 import os
 import matplotlib.pyplot as plt
 
-# from mpi4py import MPI
+from mpi4py import MPI
+import sys
 
 parser = argparse.ArgumentParser()
 parser.add_argument("cdf_config", help="JSON file with optimization configuration")
@@ -33,7 +34,11 @@ parser.add_argument(
 args = parser.parse_args()
 
 # create bin optimizer from configuration file
-config = parse_cdf_config(["-c", args.cdf_config])
+config, config_parser = parse_cdf_config(["-c", args.cdf_config])
+if MPI.COMM_WORLD.Get_rank() == 0:
+    config_parser.print_values()
+    sys.stdout.flush()
+
 
 tables = EventMatchedTable.FromH5(config.event_tables)
 
@@ -66,20 +71,21 @@ cdf = CDF2D(
     constraint=config.bounds,
     bins_func=partial(bins_func, callback=progress),
 )
+comm = MPI.COMM_WORLD
+progress_callbacks = comm.gather(progress, root=0)
 
-# mpi reductions happen here to find the global best fit
-rank = 0
-if rank == 0:
+if MPI.COMM_WORLD.Get_rank() == 0:
     mode = "w" if args.overwrite else "a"
     with h5py.File(config.output, mode) as f:
         cdf.ToH5(f, config.name)
     with h5py.File(config.save_progress, mode) as f:
-        progress.ToH5(f, config.name)
+        for i, cb in enumerate(progress_callbacks):
+            cb.ToH5(f, f"{config.name}_{i}")
 
-    fig, ax = plt.subplots(figsize=(10, 5))
-    progress.Draw(*config.xlim, ax)
-    hpl.savefig(os.path.join(config.plots, f"{config.name}_progress.pdf"))
-    plt.close()
+            fig, ax = plt.subplots(figsize=(10, 5))
+            cb.Draw(*config.xlim, ax)
+            hpl.savefig(os.path.join(config.plots, f"{config.name}_progress_{i}.pdf"))
+            plt.close()
 
     fig, ax = plt.subplots(figsize=(10, 5))
     cdf.Draw(ax)
@@ -106,8 +112,8 @@ if rank == 0:
         ratio_evt_shift = Hist1D.Filled(
             hists["evt_shifted"].n / hists["nominal"].n, hists["evt_shifted"].xaxis
         )
-        ratio_file_shift = Hist1D.Filled(
-            hist["file_shifted"].n / hists["nominal"].n, hists["file_shifted"].xaxis
+        ratio_file_shifted = Hist1D.Filled(
+            hists["file_shifted"].n / hists["nominal"].n, hists["file_shifted"].xaxis
         )
 
         bottom.axhline(1, linestyle="--", color="gray")
