@@ -134,6 +134,12 @@ def parse_cdf_config(args=None):
         "--var_bins_eval",
         help="Executable string to determine bins in which to plot the variable, specified by --var_label, distribution. Eg. np.linspace(...). Exclusive with --var_bins",
     )
+    parser.add_argument(
+        "--save_progress",
+        default="progress.h5",
+        help="Save the progress tracker to FILE_NAME.h5",
+        metavar="FILE_NAME.h5",
+    )
 
     if args:
         # parse "args"

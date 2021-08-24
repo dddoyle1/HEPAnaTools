@@ -82,6 +82,11 @@ else:
 # mpi reductions happen here to find the global best fit
 rank = 0
 if rank == 0:
+    mode = "w" if args.overwrite else "a"
+    with h5py.File(config.output, mode) as f:
+        cdf.ToH5(f, config.name)
+    with h5py.File(config.save_progress, mode) as f:
+        progress.ToH5(f, config.name)
 
     fig, ax = hpl.split_subplots(nrows=2, figsize=(10, 8))
     binopt.target.Draw(ax[0], histtype="step", hatch="//", color="k", label="Target")
