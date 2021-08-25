@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import h5py
+import numba
 
 
 class FileNameOrHandle:
@@ -35,9 +36,20 @@ class Axis:
     def NBins(self):
         return len(self.edges) - 1
 
-    def FindBin(self, x, **kwargs):
-        return np.digitize(x, self.edges, **kwargs) - 1
+    def FindBin(self, x):
+        return Axis._find_bin(x, self.edges)
 
+    @staticmethod
+    @numba.jit(nopython=True)
+    def _find_bin(x, edges):
+        # return np.digitize(np.array([x]), edges)[0] - 1
+        nbins = len(edges)
+        for i in range(nbins - 1):
+            if edges[i] <= x and x < edges[i + 1]:
+                return i
+        return nbins
+
+    @numba.jit(nopython=True)
     def GetBinCenter(self, i):
         return (self.edges[i + 1] + self.edges[i]) / 2
 
@@ -91,10 +103,9 @@ class Hist1D:
         if histtype == "error":
             bin_widths = np.diff(self.xaxis.edges)
             bin_centers = (self.xaxis.edges[:-1] + self.xaxis.edges[1:]) / 2
-            if not 'yerr' in kwargs: kwargs.update({'yerr': np.sqrt(self.n)})
-            ax.errorbar(
-                bin_centers, self.n, xerr=bin_widths / 2, fmt=".", **kwargs
-            )
+            if not "yerr" in kwargs:
+                kwargs.update({"yerr": np.sqrt(self.n)})
+            ax.errorbar(bin_centers, self.n, xerr=bin_widths / 2, fmt=".", **kwargs)
         else:
             ax.hist(
                 self.xaxis.edges[:-1],

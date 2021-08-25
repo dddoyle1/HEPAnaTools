@@ -113,7 +113,7 @@ class CDF2D(Hist2D):
 
     def _sshift(self, x):
         """To be wrapped with np.vectorize"""
-        return self.constraint(self.Sample(x) + x)
+        return self.constraint(self._ssample(x) + x)
 
     @numba.jit(nopython=True)
     def _sample1d(cdf, bins):
@@ -521,7 +521,7 @@ class CDFBinOptimizer(BinOptimizer):
     def fun(self, nominal, shifted):
         cdf = self.cdf_factory(nominal, shifted, xbins=self.bins[0], ybins=self.bins[1])
         hshifted = Hist1D(
-            np.array([cdf._sshift(x) for x in nominal]), bins=self.obj_bins
+            np.array(cdf.Shift(nominal), bins=self.obj_bins
         )
         return chisq(self.target.n, hshifted.n)
 
