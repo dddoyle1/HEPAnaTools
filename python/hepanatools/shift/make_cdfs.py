@@ -57,8 +57,8 @@ def bins_func(nominal, shifted, xbins, ybins, **kwargs):
 progress = ProgressTrackerCallback(verbose=args.verbose, report_every=args.report_every)
 
 # get the right data
-nominal = tables[config.var_label][config.cut_label][config.nominal_sample]
-shifted = tables[config.var_label][config.cut_label][config.shifted_sample]
+nominal = tables[config.var_label][config.cut_label][config.nominal_sample].values
+shifted = tables[config.var_label][config.cut_label][config.shifted_sample].values
 all_idx = np.arange(nominal.shape[0])
 train_idx, test_idx = train_test_split(all_idx, train_size=config.train_size)
 train_nominal = nominal[train_idx]
@@ -79,12 +79,13 @@ if not args.load_from:
     comm = MPI.COMM_WORLD
     progress_callbacks = comm.gather(progress, root=0)
 
-    mode = "w" if args.overwrite else "a"
-    with h5py.File(config.output, mode) as f:
-        cdf.ToH5(f, config.name)
-    with h5py.File(config.save_progress, mode) as f:
-        for i, cb in enumerate(progress_callbacks):
-            cb.ToH5(f, f"{config.name}_{i}")
+    if comm.Get_rank() == 0:
+        mode = "w" if args.overwrite else "a"
+        with h5py.File(config.output, mode) as f:
+            cdf.ToH5(f, config.name)
+        with h5py.File(config.save_progress, mode) as f:
+            for i, cb in enumerate(progress_callbacks):
+                cb.ToH5(f, f"{config.name}_{i}")
 
 else:
     cdf = CDF2D.FromH5(config.output, config.name)
@@ -129,7 +130,7 @@ if MPI.COMM_WORLD.Get_rank() == 0:
         hists = {
             "nominal": Hist1D(nominal, bins=bins),
             "file_shifted": Hist1D(shifted, bins=bins),
-            "evt_shifted": Hist1D([cdf.Shift(x) for x in nominal.values], bins=bins),
+            "evt_shifted": Hist1D(cdf.Shift(nominal), bins=bins),
         }
         hists["nominal"].Draw(top, histtype="step", color="b", lw=2, label="Nominal")
         hists["evt_shifted"].Draw(
