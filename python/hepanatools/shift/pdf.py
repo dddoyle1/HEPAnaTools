@@ -113,7 +113,7 @@ class CDF2D(Hist2D):
 
     def _sshift(self, x):
         """To be wrapped with np.vectorize"""
-        return self.constraint(self.Sample(x) + x)
+        return self.constraint(self._ssample(x) + x)
 
     @numba.jit(nopython=True)
     def _sample1d(cdf, bins):
@@ -204,6 +204,7 @@ def xbins_equal_prob(nominal, shifted, xbins, ybins):
         print(f"Warning: nbins changed from {xbins} --> {xedges.shape[0]}")
     xedges[-1] += 0.0001
     return nominal, shifted, xedges, ybins
+
 
 class BinOptimizer:
     DEFAULT_MINIMIZER_OPTS = {
@@ -403,7 +404,7 @@ class CDFBinOptimizer(BinOptimizer):
         )
 
     def __call__(self, nominal, shifted, xbins, ybins, **kwargs):
-        self.target = Hist1D(shifted-nominal, self.obj_bins)
+        self.target = Hist1D(shifted - nominal, self.obj_bins)
         nseeds = max(self.nquick_seeds, self.nmultistarts)
 
         # generate random seed bins from a uniform distribution
@@ -518,9 +519,9 @@ class CDFBinOptimizer(BinOptimizer):
 
     def fun(self, nominal, shifted):
         cdf = self.cdf_factory(nominal, shifted, xbins=self.bins[0], ybins=self.bins[1])
-        hshifted = Hist1D([cdf._ssample(x) for x in nominal], bins=self.obj_bins)
-
+        hshifted = Hist1D(cdf.Sample(nominal), bins=self.obj_bins)
         return chisq(self.target.n, hshifted.n)
+
 
 class BruteResult:
     def __init__(self, fun, jac=None):
