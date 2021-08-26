@@ -4,8 +4,12 @@ import numba
 
 @numba.jit(nopython=True)
 def chisq(x, u):
-    return ((x - u) ** 2 / u).sum()
-
+    chi = 0
+    n = len(x)
+    for i in range(n):
+        if u[i]: 
+            chi += (x[i] - u[i]) ** 2 / u[i]
+    return chi
 
 @numba.jit(nopython=True)
 def not_quite_chisq(x, u):
