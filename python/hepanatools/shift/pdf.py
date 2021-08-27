@@ -1,5 +1,5 @@
 from hepanatools.shift.hist import Hist1D, Hist2D, FileNameOrHandle
-from hepanatools.utils.math import chisq
+from hepanatools.utils.math import chisq, mv_cv_and_uncert
 import scipy.optimize
 import numba
 import numpy as np
@@ -129,6 +129,35 @@ class CDF2D(Hist2D):
         x1 = bins[b1 + 1]
         return x0 + (y - y0) * (x1 - x0) / (y1 - y0)
 
+
+def MVShift(cdf, nominal, bins, nuniverses=100):
+    universes = np.array(
+        [Hist1D(cdf.Shift(nominal), bins=bins).n for _ in range(nuniverses)]
+    )
+    cv, up, dw = mv_cv_and_uncert(universes)
+    return (
+        Hist1D.Filled(n=cv, edges=bins),
+        Hist1D.Filled(n=up, edges=bins),
+        Hist1D.Filled(n=dw, edges=bins),
+    )
+
+
+def MVShiftRatio(cdf, nominal, bins, denom, nuniverses=100):
+    universes = np.array(
+        [Hist1D(cdf.Shift(nominal), bins=bins).n / denom.n for _ in range(nuniverses)]
+    )
+    cv, up, dw = mv_cv_and_uncert(universes)
+    return (
+        Hist1D.Filled(n=cv, edges=bins),
+        Hist1D.Filled(n=up, edges=bins),
+        Hist1D.Filled(n=dw, edges=bins),
+    )
+
+def arctanspace(start, stop, npoints, m=1):
+    x = np.arctan(np.linspace(-m, m, npoints))
+    x = np.abs(np.diff(x))
+    x = x / x.sum() * (stop - start)
+    return np.ones(npoints)*start + ([0] + np.cumsum(x).tolist())
 
 def ybins1(nominal, shifted, xbins, ybins):
     """
