@@ -54,6 +54,10 @@ progress = ProgressTrackerCallback(verbose=args.verbose, report_every=args.repor
 
 # get the right data
 nominal = tables[config.var_label][config.cut_label][config.nominal_sample].values
+
+# remove events that are beyond the range of our cdf
+nominal = nominal[(nominal >= config.xlim[0]) & (nominal < config.xlim[1])]
+
 shifted = tables[config.var_label][config.cut_label][config.shifted_sample].values
 all_idx = np.arange(nominal.shape[0])
 train_idx, test_idx = train_test_split(all_idx, train_size=config.train_size)
