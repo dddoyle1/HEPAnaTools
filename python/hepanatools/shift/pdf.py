@@ -488,9 +488,10 @@ class CDFBinOptimizer(BinOptimizer):
                 # if the fit succeeds, break the inner loop
                 break
 
-        assert np.array_equal(
-            self.best_bins, np.sort(self.best_bins)
-        ), "Error: Fit did not yield a valid set of bins."
+        if not np.array_equal(self.best_bins, np.sort(self.best_bins)):
+            print("Error: Fit did not yield a valid set of bins. Falling back to where I was seeded")
+            self.best_bins = seeds[offset::stride][0]
+            self.best_chisq = seed_chi2[offset::stride][0]
 
         nbins = self.bins[0].shape[0]
         # collect best fit results from all ranks
@@ -521,7 +522,7 @@ class CDFBinOptimizer(BinOptimizer):
     def fun(self, nominal, shifted):
         cdf = self.cdf_factory(nominal, shifted, xbins=self.bins[0], ybins=self.bins[1])
         hshifted = Hist1D(
-            np.array(cdf.Shift(nominal), bins=self.obj_bins
+            cdf.Shift(nominal), bins=self.obj_bins
         )
         return chisq(self.target.n, hshifted.n)
 
